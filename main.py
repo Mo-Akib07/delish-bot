@@ -336,16 +336,8 @@ def main():
         logger.error("TELEGRAM_BOT_TOKEN not found in .env!")
         return
 
-    # Build application with increased timeouts
-    app = (
-        ApplicationBuilder()
-        .token(token)
-        .connect_timeout(30)
-        .read_timeout(30)
-        .write_timeout(30)
-        .pool_timeout(30)
-        .build()
-    )
+    # Build application
+    app = ApplicationBuilder().token(token).build()
 
     # ── Commands ──
     app.add_handler(CommandHandler("start", cmd_start))
