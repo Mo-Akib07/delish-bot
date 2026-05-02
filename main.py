@@ -88,18 +88,46 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /help command."""
     help_text = (
         "🆘 *Delish Bot Help*\n\n"
-        "Available commands:\n"
+        "*Commands:*\n"
         "/start — Main menu\n"
-        "/help — This help message\n"
-        "/cart — View your cart\n"
+        "/order — Order by text (e.g. /order chicken tikka)\n"
         "/menu — Browse the menu\n"
-        "/track — Track banquet inquiry\n\n"
-        "Or just type anything and I'll help! 🤖"
+        "/cart — View your cart\n"
+        "/cancel — Cancel current flow \u0026 go back\n"
+        "/help — This help message\n\n"
+        "*Chat ordering:*\n"
+        "_\"order 2 samosas\"_ — adds to cart\n"
+        "_\"checkout\"_ — start checkout\n"
+        "_\"do you have burgers?\"_ — search menu\n\n"
+        "Or use the *buttons* below! 👇"
     )
     await update.message.reply_text(
         help_text, parse_mode=ParseMode.MARKDOWN,
         reply_markup=main_menu_keyboard()
     )
+
+
+async def cmd_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /cancel and /back — escape any flow, go back to main menu."""
+    user_id = update.effective_user.id
+    from agent import clear_cart
+    session = get_session(user_id)
+    flow = session.get("flow")
+    clear_session_flow(user_id)
+
+    if flow:
+        await update.message.reply_text(
+            f"↩️ Left the *{flow.replace('_', ' ').title()}* flow.\n\n"
+            "What would you like to do?",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=main_menu_keyboard()
+        )
+    else:
+        await update.message.reply_text(
+            WELCOME_MSG,
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=main_menu_keyboard()
+        )
 
 
 async def cmd_cart(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -216,7 +244,6 @@ async def cmd_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"🛒 Cart: *{cart_count} items* • *${total:.2f}*\n\n"
             f"Add more with /order or type _\"checkout\"_ when ready!",
             parse_mode=ParseMode.MARKDOWN,
-            reply_markup=main_menu_keyboard()
         )
     else:
         await update.message.reply_text(
@@ -224,29 +251,41 @@ async def cmd_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Try: /order chicken tikka, /order samosa, /order burger\n"
             f"Or /menu to browse categories!",
             parse_mode=ParseMode.MARKDOWN,
-            reply_markup=main_menu_keyboard()
         )
 
 
 # ─── TEXT MESSAGE HANDLER ─────────────────────────────────────
 
 async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle all text messages. Checks flows, then AI agent with conversational ordering."""
+    """Handle all text messages. Smart keyboard: only show main menu when idle."""
     user_id = update.effective_user.id
     session = get_session(user_id)
 
-    # Handle text checkout flow (from conversational ordering)
+    # Handle text checkout flow (no menu buttons during checkout)
     if session.get("flow") == "text_checkout":
         await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
         from agent import handle_text_checkout
         response = await handle_text_checkout(user_id, update.message.text)
         if response:
-            await update.message.reply_text(
-                response, parse_mode=ParseMode.MARKDOWN, reply_markup=main_menu_keyboard()
-            )
+            # Check if order was just completed (flow cleared)
+            is_done = session.get("flow") is None
+            if is_done:
+                # Order placed! Show response then auto-show fresh start menu
+                await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
+                await update.message.reply_text(
+                    "🍽️ *What else can I help with?*",
+                    parse_mode=ParseMode.MARKDOWN,
+                    reply_markup=main_menu_keyboard()
+                )
+            else:
+                # Still in checkout flow, no menu buttons
+                hint = "\n\n_💡 /cancel to go back to main menu_"
+                await update.message.reply_text(
+                    response + hint, parse_mode=ParseMode.MARKDOWN
+                )
             return
 
-    # Try flow-specific text handlers
+    # Try flow-specific text handlers (no menu buttons during flows)
     if session.get("flow"):
         handled = False
         if session["flow"] in ("order",):
@@ -266,12 +305,18 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         if handled:
             return
 
-    # Fall back to AI agent (with conversational ordering + multi-provider)
+    # AI agent for natural language (show menu only when not in a flow)
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
     response = await process_message(user_id, update.message.text)
-    await update.message.reply_text(
-        response, parse_mode=ParseMode.MARKDOWN, reply_markup=main_menu_keyboard()
-    )
+
+    # If the response triggered a flow (like checkout), don't show menu
+    if session.get("flow"):
+        hint = "\n\n_💡 /cancel to go back to main menu_"
+        await update.message.reply_text(response + hint, parse_mode=ParseMode.MARKDOWN)
+    else:
+        await update.message.reply_text(
+            response, parse_mode=ParseMode.MARKDOWN, reply_markup=main_menu_keyboard()
+        )
 
 
 # ─── NOOP HANDLER ─────────────────────────────────────────────
@@ -308,6 +353,8 @@ def main():
     app.add_handler(CommandHandler("cart", cmd_cart))
     app.add_handler(CommandHandler("menu", cmd_menu))
     app.add_handler(CommandHandler("order", cmd_order))
+    app.add_handler(CommandHandler("cancel", cmd_cancel))
+    app.add_handler(CommandHandler("back", cmd_cancel))
 
     # ── Main menu callbacks ──
     app.add_handler(CallbackQueryHandler(handle_main_menu, pattern=r"^main:"))
