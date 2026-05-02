@@ -1,3 +1,11 @@
+---
+title: Delish Bot
+emoji: 🍽️
+colorFrom: blue
+colorTo: indigo
+sdk: docker
+pinned: false
+---
 # 🍽️ Delish Bot — AI Restaurant Telegram Bot
 
 A fully-featured Telegram bot for **Delish** restaurant, powered by **Google Gemini AI** and **Firecrawl** live menu scraping.
