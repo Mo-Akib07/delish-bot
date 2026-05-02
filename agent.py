@@ -496,7 +496,8 @@ async def process_message(user_id: int, message_text: str) -> str:
         cart = get_cart(user_id)
         ctx = ""
         if cart:
-            ctx = f"[Cart: {', '.join(f'{i[\"name\"]}×{i[\"qty\"]}' for i in cart)}, ${get_cart_total(user_id):.2f}] "
+            cart_items = ", ".join(f"{i['name']}x{i['qty']}" for i in cart)
+            ctx = f"[Cart: {cart_items}, ${get_cart_total(user_id):.2f}] "
         response = await chat.send_message_async(ctx + message_text)
 
         # Handle tool calls
@@ -523,7 +524,8 @@ async def process_message(user_id: int, message_text: str) -> str:
     menu_ctx = f"Menu categories: {', '.join(get_categories()[:8])}"
     cart = get_cart(user_id)
     if cart:
-        menu_ctx += f"\nUser's cart: {', '.join(f'{i[\"name\"]}×{i[\"qty\"]}' for i in cart)}"
+        cart_str = ", ".join(f"{i['name']}x{i['qty']}" for i in cart)
+        menu_ctx += f"\nUser's cart: {cart_str}"
     groq_resp = await _call_groq(message_text, menu_ctx)
     if groq_resp: return groq_resp
 
