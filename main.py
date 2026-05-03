@@ -310,13 +310,22 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     response = await process_message(user_id, update.message.text)
 
     # If the response triggered a flow (like checkout), don't show menu
+    from telegram.error import BadRequest
     if session.get("flow"):
         hint = "\n\n_💡 /cancel to go back to main menu_"
-        await update.message.reply_text(response + hint, parse_mode=ParseMode.MARKDOWN)
+        try:
+            await update.message.reply_text(response + hint, parse_mode=ParseMode.MARKDOWN)
+        except BadRequest:
+            await update.message.reply_text(response + "\n\n💡 /cancel to go back to main menu")
     else:
-        await update.message.reply_text(
-            response, parse_mode=ParseMode.MARKDOWN, reply_markup=main_menu_keyboard()
-        )
+        try:
+            await update.message.reply_text(
+                response, parse_mode=ParseMode.MARKDOWN, reply_markup=main_menu_keyboard()
+            )
+        except BadRequest:
+            await update.message.reply_text(
+                response, reply_markup=main_menu_keyboard()
+            )
 
 
 # ─── NOOP HANDLER ─────────────────────────────────────────────
