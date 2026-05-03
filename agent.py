@@ -87,21 +87,21 @@ menu and recommend items. Be conversational and proactive."""
 
 # ─── GROQ / MISTRAL / NVIDIA FALLBACK ────────────────────────
 
-async def _call_groq(message: str, context: str = "") -> str:
+async def _call_groq(message: str, context: str = "", history: list = None) -> str:
     """Call Groq API (OpenAI-compatible) as fallback."""
     if not GROQ_API_KEY: return ""
     import httpx
     try:
+        messages = [{"role": "system", "content": SYSTEM_PROMPT + "\n" + context}]
+        if history: messages.extend(history)
+        messages.append({"role": "user", "content": message})
         async with httpx.AsyncClient(timeout=15) as client:
             r = await client.post(
                 "https://api.groq.com/openai/v1/chat/completions",
                 headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
                 json={
                     "model": "llama-3.1-8b-instant",
-                    "messages": [
-                        {"role": "system", "content": SYSTEM_PROMPT + "\n" + context},
-                        {"role": "user", "content": message}
-                    ],
+                    "messages": messages,
                     "max_tokens": 800, "temperature": 0.7,
                 }
             )
@@ -112,21 +112,21 @@ async def _call_groq(message: str, context: str = "") -> str:
         logger.warning(f"Groq fallback error: {e}")
     return ""
 
-async def _call_mistral(message: str, context: str = "") -> str:
+async def _call_mistral(message: str, context: str = "", history: list = None) -> str:
     """Call Mistral API as fallback."""
     if not MISTRAL_API_KEY: return ""
     import httpx
     try:
+        messages = [{"role": "system", "content": SYSTEM_PROMPT + "\n" + context}]
+        if history: messages.extend(history)
+        messages.append({"role": "user", "content": message})
         async with httpx.AsyncClient(timeout=15) as client:
             r = await client.post(
                 "https://api.mistral.ai/v1/chat/completions",
                 headers={"Authorization": f"Bearer {MISTRAL_API_KEY}", "Content-Type": "application/json"},
                 json={
                     "model": "mistral-small-latest",
-                    "messages": [
-                        {"role": "system", "content": SYSTEM_PROMPT + "\n" + context},
-                        {"role": "user", "content": message}
-                    ],
+                    "messages": messages,
                     "max_tokens": 800, "temperature": 0.7,
                 }
             )
@@ -137,21 +137,21 @@ async def _call_mistral(message: str, context: str = "") -> str:
         logger.warning(f"Mistral fallback error: {e}")
     return ""
 
-async def _call_nvidia(message: str, context: str = "") -> str:
+async def _call_nvidia(message: str, context: str = "", history: list = None) -> str:
     """Call NVIDIA NIM API as fallback."""
     if not NVIDIA_API_KEY: return ""
     import httpx
     try:
+        messages = [{"role": "system", "content": SYSTEM_PROMPT + "\n" + context}]
+        if history: messages.extend(history)
+        messages.append({"role": "user", "content": message})
         async with httpx.AsyncClient(timeout=15) as client:
             r = await client.post(
                 "https://integrate.api.nvidia.com/v1/chat/completions",
                 headers={"Authorization": f"Bearer {NVIDIA_API_KEY}", "Content-Type": "application/json"},
                 json={
                     "model": "meta/llama-3.1-8b-instruct",
-                    "messages": [
-                        {"role": "system", "content": SYSTEM_PROMPT + "\n" + context},
-                        {"role": "user", "content": message}
-                    ],
+                    "messages": messages,
                     "max_tokens": 800, "temperature": 0.7,
                 }
             )
@@ -529,27 +529,26 @@ async def process_message(user_id: int, message_text: str) -> str:
 
     # Step 3: Try Groq fallback
     menu_ctx = f"Menu categories: {', '.join(get_categories()[:8])}"
+    cart = get_cart(user_id)
     if cart:
         cart_str = ", ".join(f"{i['name']}x{i['qty']}" for i in cart)
         menu_ctx += f"\nUser's cart: {cart_str}"
         
-    history_ctx = "\n".join(f"{m['role'].capitalize()}: {m['content']}" for m in session["history"][:-1])
-    if history_ctx:
-        menu_ctx += "\n\nRecent Conversation:\n" + history_ctx
+    history_arr = session["history"][:-1] if "history" in session else []
 
-    groq_resp = await _call_groq(message_text, menu_ctx)
+    groq_resp = await _call_groq(message_text, menu_ctx, history=history_arr)
     if groq_resp:
         session["history"].append({"role": "assistant", "content": groq_resp})
         return groq_resp
 
     # Step 4: Try Mistral fallback
-    mistral_resp = await _call_mistral(message_text, menu_ctx)
+    mistral_resp = await _call_mistral(message_text, menu_ctx, history=history_arr)
     if mistral_resp:
         session["history"].append({"role": "assistant", "content": mistral_resp})
         return mistral_resp
 
     # Step 5: Try NVIDIA fallback
-    nvidia_resp = await _call_nvidia(message_text, menu_ctx)
+    nvidia_resp = await _call_nvidia(message_text, menu_ctx, history=history_arr)
     if nvidia_resp:
         session["history"].append({"role": "assistant", "content": nvidia_resp})
         return nvidia_resp
