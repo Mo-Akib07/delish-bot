@@ -483,9 +483,14 @@ async def process_message(user_id: int, message_text: str) -> str:
 
     # Step 0: Check if in text checkout flow
     session = get_session(user_id)
+    session["history"].append({"role": "user", "content": message_text})
+    session["history"] = session["history"][-10:]  # Keep last 10 messages
+
     if session.get("flow") == "text_checkout":
         result = await handle_text_checkout(user_id, message_text)
-        if result: return result
+        if result:
+            session["history"].append({"role": "assistant", "content": result})
+            return result
 
     # Step 1: Smart local handler (instant)
     local_response = _smart_local_response(message_text, user_id)
@@ -515,30 +520,44 @@ async def process_message(user_id: int, message_text: str) -> str:
             response = await chat.send_message_async(genai.protos.Content(parts=fn_responses))
 
         text = "\n".join(p.text for p in response.parts if hasattr(p, 'text') and p.text)
-        if text: return text
+        if text:
+            session["history"].append({"role": "assistant", "content": text})
+            return text
     except Exception as e:
         logger.warning(f"Gemini error: {e}")
         session["chat"] = None
 
     # Step 3: Try Groq fallback
     menu_ctx = f"Menu categories: {', '.join(get_categories()[:8])}"
-    cart = get_cart(user_id)
     if cart:
         cart_str = ", ".join(f"{i['name']}x{i['qty']}" for i in cart)
         menu_ctx += f"\nUser's cart: {cart_str}"
+        
+    history_ctx = "\n".join(f"{m['role'].capitalize()}: {m['content']}" for m in session["history"][:-1])
+    if history_ctx:
+        menu_ctx += "\n\nRecent Conversation:\n" + history_ctx
+
     groq_resp = await _call_groq(message_text, menu_ctx)
-    if groq_resp: return groq_resp
+    if groq_resp:
+        session["history"].append({"role": "assistant", "content": groq_resp})
+        return groq_resp
 
     # Step 4: Try Mistral fallback
     mistral_resp = await _call_mistral(message_text, menu_ctx)
-    if mistral_resp: return mistral_resp
+    if mistral_resp:
+        session["history"].append({"role": "assistant", "content": mistral_resp})
+        return mistral_resp
 
     # Step 5: Try NVIDIA fallback
     nvidia_resp = await _call_nvidia(message_text, menu_ctx)
-    if nvidia_resp: return nvidia_resp
+    if nvidia_resp:
+        session["history"].append({"role": "assistant", "content": nvidia_resp})
+        return nvidia_resp
 
     # Step 6: Local response
-    if local_response: return local_response
+    if local_response:
+        session["history"].append({"role": "assistant", "content": local_response})
+        return local_response
 
     return (
         "👋 I'm your Delish AI concierge!\n\n"
