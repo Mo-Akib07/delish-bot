@@ -362,6 +362,8 @@ def main():
     # Build application
     app = ApplicationBuilder().token(token).build()
 
+
+
     # ── Commands ──
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("help", cmd_help))
@@ -440,9 +442,20 @@ def main():
     asyncio.set_event_loop(loop)
     loop.run_until_complete(init_db())
     logger.info("📦 Database initialized")
-    logger.info("🚀 Bot is running! Press Ctrl+C to stop.")
-
-    app.run_polling(drop_pending_updates=True)
+    
+    webhook_url = os.getenv("WEBHOOK_URL")
+    if webhook_url:
+        port = int(os.environ.get("PORT", 10000))
+        logger.info(f"🚀 Starting WEBHOOK mode on {webhook_url}:{port}")
+        app.run_webhook(
+            listen="0.0.0.0",
+            port=port,
+            webhook_url=webhook_url,
+            drop_pending_updates=True
+        )
+    else:
+        logger.info("🚀 Starting POLLING mode (local). Press Ctrl+C to stop.")
+        app.run_polling(drop_pending_updates=True)
 
 
 if __name__ == "__main__":
